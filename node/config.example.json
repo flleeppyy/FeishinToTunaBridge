@@ -6,5 +6,6 @@
   "baseUrls": {
     "feishin": "http://localhost:4333/",
     "tuna": "http://localhost:1608/"
-  }
+  },
+  "verbosity": 1
 }

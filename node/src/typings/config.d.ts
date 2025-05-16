@@ -10,5 +10,6 @@ type FeiTunaConfig = {
   },
   baseUrls: {
     [key in import("../enums/config").Services]: string;
-  }
+  },
+  verbosity: import("../enums/config").ConfigVerbosity;
 }

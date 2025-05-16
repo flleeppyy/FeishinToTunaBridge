@@ -6,8 +6,22 @@ import {
 } from "./enums/feishin";
 import { FeishinWSEvent } from "./enums/feishin.websocket";
 import { PlayerStatus as TunaPlayerStatus } from "./enums/tuna";
+import { ConfigVerbosity } from "./enums/config";
 
-const config = untypedConfig as FeiTunaConfig;
+console.fLog = (type: ConfigVerbosity, ...args: any[]) => {
+	if (type >= config.verbosity) {
+		console.log(...args);
+	}
+}
+
+// typing for fLog
+declare global {
+	interface Console {
+		fLog: (type: ConfigVerbosity, ...args: any[]) => void;
+	}
+}
+
+export const config = untypedConfig as FeiTunaConfig;
 
 const FeishinState: FeishinState = {
 	song: null,
@@ -16,6 +30,7 @@ const FeishinState: FeishinState = {
 	status: FeishinPlayerStatus.PAUSED,
 	repeat: FeishinRepeatState.NONE,
 	shuffle: true,
+	lastPosition: 0,
 };
 
 async function connect() {
@@ -67,7 +82,24 @@ async function connect() {
 				}
 			}
 
-			console.log(`Recieved event ${fEvent.event}`, fEvent.data);
+			
+			if (fEvent.event === FeishinWSEvent.POSITION) {
+				const roundedPosition = Math.floor(FeishinState.position);
+				const roundedLength = Math.floor(FeishinState.song?.duration / 1000);
+				if (roundedPosition === FeishinState.lastPosition) {
+					return;
+				}
+				FeishinState.lastPosition = roundedPosition;
+
+				console.fLog(
+					ConfigVerbosity.POSITIONONLY,
+					`Position: ${FeishinState.lastPosition} / ${roundedLength}`,
+				);
+			} else {
+				console.fLog(ConfigVerbosity.INFO,`Recieved event ${fEvent.event}`, fEvent.data);
+			}
+
+
 			await sendDataToTuna(FeishinState);
 		};
 
@@ -81,7 +113,7 @@ async function connect() {
 		};
 
 		FeishinWS.onclose = async (event) => {
-			console.warn(
+			console.fLog(ConfigVerbosity.INFO,
 				"Socket is closed. Reconnect will be attempted in 1 second.",
 				event.reason,
 			);
@@ -150,7 +182,7 @@ async function sendDataToTuna(state: FeishinState) {
 				date: Date.now(),
 			}),
 		});
-		console.info("Pushed tuna status", data);
+		console.fLog(ConfigVerbosity.DEBUG, "Pushed tuna status", data);
 		tunaLastState = data;
 
 		if (!response.ok) {

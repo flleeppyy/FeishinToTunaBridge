@@ -4,7 +4,8 @@ type FeishinState = {
     shuffle: boolean,
     volume: number,
     song: FeishinSong
-    position: number
+    position: number,
+    lastPosition: number,
 }
 
 type FeishinWSEventObject<T = FeishinWSEventAny> = {
