@@ -20,73 +20,83 @@ const FeishinState: FeishinState = {
 
 async function connect() {
 	const FeishinAuthHeader = `Basic ${Buffer.from(`${config.credentials.feishin.username}:${config.credentials.feishin.password}`).toString("base64")}`;
-	const FeishinWS: WebSocket = new WebSocket(config.baseUrls.feishin);
+	try {
+		const FeishinWS: WebSocket = new WebSocket(config.baseUrls.feishin);
 
-	FeishinWS.onmessage = async (wsevent) => {
-		const fEvent = JSON.parse(wsevent.data.toString()) as FeishinWSEventObject;
-		switch (fEvent.event) {
-			case FeishinWSEvent.STATE: {
-				const event = fEvent as FeishinWSEventObject<FeishinWSEventState>;
-				feishinPostProcessSong(event.data.song);
-				Object.assign(FeishinState, event.data);
-				break;
-			}
-			case FeishinWSEvent.PLAYBACK: {
-				const event = fEvent as FeishinWSEventObject<FeishinWSEventPlayback>;
-				FeishinState.status = event.data;
-				break;
-			}
-			case FeishinWSEvent.POSITION: {
-				const event = fEvent as FeishinWSEventObject<FeishinWSEventPosition>;
-				FeishinState.position = event.data;
-				break;
-			}
-			case FeishinWSEvent.REPEAT: {
-				const event = fEvent as FeishinWSEventObject<FeishinWSEventRepeat>;
-				FeishinState.repeat = event.data;
-				break;
-			}
-			case FeishinWSEvent.SHUFFLE: {
-				const event = fEvent as FeishinWSEventObject<FeishinWSEventShuffle>;
-				FeishinState.shuffle = event.data;
-				break;
-			}
-			case FeishinWSEvent.SONG: {
-				const event = fEvent as FeishinWSEventObject<FeishinWSEventSong>;
+		FeishinWS.onmessage = async (wsevent) => {
+			const fEvent = JSON.parse(
+				wsevent.data.toString(),
+			) as FeishinWSEventObject;
+			switch (fEvent.event) {
+				case FeishinWSEvent.STATE: {
+					const event = fEvent as FeishinWSEventObject<FeishinWSEventState>;
+					feishinPostProcessSong(event.data.song);
+					Object.assign(FeishinState, event.data);
+					break;
+				}
+				case FeishinWSEvent.PLAYBACK: {
+					const event = fEvent as FeishinWSEventObject<FeishinWSEventPlayback>;
+					FeishinState.status = event.data;
+					break;
+				}
+				case FeishinWSEvent.POSITION: {
+					const event = fEvent as FeishinWSEventObject<FeishinWSEventPosition>;
+					FeishinState.position = event.data;
+					break;
+				}
+				case FeishinWSEvent.REPEAT: {
+					const event = fEvent as FeishinWSEventObject<FeishinWSEventRepeat>;
+					FeishinState.repeat = event.data;
+					break;
+				}
+				case FeishinWSEvent.SHUFFLE: {
+					const event = fEvent as FeishinWSEventObject<FeishinWSEventShuffle>;
+					FeishinState.shuffle = event.data;
+					break;
+				}
+				case FeishinWSEvent.SONG: {
+					const event = fEvent as FeishinWSEventObject<FeishinWSEventSong>;
 
-				FeishinState.song = event.data;
-				break;
+					FeishinState.song = event.data;
+					break;
+				}
+				case FeishinWSEvent.VOLUME: {
+					const event = fEvent as FeishinWSEventObject<FeishinWSEventVolume>;
+					FeishinState.volume = event.data;
+					break;
+				}
 			}
-			case FeishinWSEvent.VOLUME: {
-				const event = fEvent as FeishinWSEventObject<FeishinWSEventVolume>;
-				FeishinState.volume = event.data;
-				break;
-			}
-		}
 
-		console.log(`Recieved event ${fEvent.event}`, fEvent.data);
-		await sendDataToTuna(FeishinState);
-	};
+			console.log(`Recieved event ${fEvent.event}`, fEvent.data);
+			await sendDataToTuna(FeishinState);
+		};
 
-	FeishinWS.onopen = async (_event) => {
-		FeishinWS.send(
-			JSON.stringify({
-				event: "authenticate",
-				header: FeishinAuthHeader,
-			}),
-		);
-	};
+		FeishinWS.onopen = async (_event) => {
+			FeishinWS.send(
+				JSON.stringify({
+					event: "authenticate",
+					header: FeishinAuthHeader,
+				}),
+			);
+		};
 
-	FeishinWS.onclose = async (event) => {
-		console.warn(
-			"Socket is closed. Reconnect will be attempted in 1 second.",
-			event.reason,
-		);
+		FeishinWS.onclose = async (event) => {
+			console.warn(
+				"Socket is closed. Reconnect will be attempted in 1 second.",
+				event.reason,
+			);
 
+			setTimeout(() => {
+				connect();
+			}, 1000);
+		};
+	} catch (e) {
+		console.error("Failed to connect to Feishin", e);
+		// retry in 1 second
 		setTimeout(() => {
 			connect();
 		}, 1000);
-	};
+	}
 }
 
 function feishinPostProcessSong(song: FeishinSong) {
@@ -119,7 +129,7 @@ async function sendDataToTuna(state: FeishinState) {
 		album: state.song.album,
 	};
 
-	if (state.status !== "playing" && tunaLastState.status === data.status)
+	if (state.status !== "playing" && tunaLastState?.status === data.status)
 		return;
 
 	// TODO: Only send updated data, instead of the whole state
@@ -173,3 +183,16 @@ function getStatusForTuna(): TunaPlayerStatus {
 }
 
 connect();
+
+process.on("uncaughtException", (reason, promise) => {
+	if (
+		reason instanceof AggregateError &&
+		(reason.errors[1].code === "ECONNREFUSED" ||
+			reason.errors[0].code === "ECONNREFUSED")
+	) {
+		console.warn("Feishin connection refused, retrying in 1 second");
+		setTimeout(() => {
+			connect();
+		}, 1000);
+	}
+});
